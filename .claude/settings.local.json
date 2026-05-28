@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Test-Path *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/clock-in)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('OK:', d.get\\('session',{}\\).get\\('id','ERR'\\)[:8]+'...' if 'session' in d else 'ERROR:', d.get\\('error',''\\)\\)\")",
+      "Bash(curl -s http://localhost:3000/api/state)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('status:', d['status']\\)\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/break-start)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('breaks:', len\\(d.get\\('session',{}\\).get\\('breaks',[]\\)\\), 'break\\(s\\)'\\)\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/break-end)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('break ended:', d.get\\('session',{}\\).get\\('breaks',[{}]\\)[-1].get\\('end'\\) is not None\\)\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/clock-out)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('clockOut set:', d.get\\('session',{}\\).get\\('clockOut'\\) is not None\\)\")",
+      "Bash(curl -s http://localhost:3000/api/sessions/today)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); s=d.get\\('sessions',[]\\); print\\(len\\(s\\), 'session\\(s\\), all clocked out:', all\\(x.get\\('clockOut'\\) for x in s\\)\\)\")",
+      "Bash(curl -s http://localhost:3000/api/sessions/week)",
+      "Bash(python3 -c ' *)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}

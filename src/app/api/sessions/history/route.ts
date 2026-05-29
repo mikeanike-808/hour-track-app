@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getAllWeekStarts, getWeekSessions } from '@/lib/sessions';
 
-export function GET() {
+export async function GET() {
   try {
-    const weekStarts = getAllWeekStarts();
-    const weeks = weekStarts.map(start => ({
-      weekStart: start,
-      sessions: getWeekSessions(start),
-    }));
+    const weekStarts = await getAllWeekStarts();
+    const weeks = await Promise.all(
+      weekStarts.map(async start => ({
+        weekStart: start,
+        sessions: await getWeekSessions(start),
+      }))
+    );
     return NextResponse.json({ weeks });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

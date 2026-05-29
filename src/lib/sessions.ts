@@ -1,13 +1,15 @@
-import db from './db';
+import { getDb } from './db';
 import { v4 as uuidv4 } from 'uuid';
 import type { Break, Session, Status, AppState } from './types';
 
-function parseRow(row: Record<string, unknown>): Session {
+type Row = Record<string, unknown>;
+
+function parseRow(row: Row): Session {
   return {
     id: row.id as string,
     date: row.date as string,
-    clockIn: row.clock_in as number,
-    clockOut: (row.clock_out as number | null) ?? undefined,
+    clockIn: Number(row.clock_in),
+    clockOut: row.clock_out != null ? Number(row.clock_out) : undefined,
     breaks: JSON.parse(row.breaks as string) as Break[],
   };
 }
@@ -16,102 +18,121 @@ function todayStr(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-export function getState(): AppState {
-  const row = db
-    .prepare('SELECT * FROM sessions WHERE clock_out IS NULL ORDER BY clock_in DESC LIMIT 1')
-    .get() as Record<string, unknown> | undefined;
+export async function getState(): Promise<AppState> {
+  const db = await getDb();
+  const result = await db.execute(
+    'SELECT * FROM sessions WHERE clock_out IS NULL ORDER BY clock_in DESC LIMIT 1'
+  );
+  const row = result.rows[0];
 
   if (!row) return { status: 'IDLE', activeSession: null };
 
-  const session = parseRow(row);
+  const session = parseRow(row as Row);
   const lastBreak = session.breaks[session.breaks.length - 1];
   const status: Status = lastBreak && lastBreak.end == null ? 'ON_BREAK' : 'WORKING';
 
   return { status, activeSession: session };
 }
 
-export function clockIn(): Session {
-  const { status } = getState();
+export async function clockIn(): Promise<Session> {
+  const { status } = await getState();
   if (status !== 'IDLE') throw new Error('Already clocked in');
 
   const id = uuidv4();
   const now = Date.now();
   const date = todayStr();
-  db.prepare('INSERT INTO sessions (id, date, clock_in, breaks) VALUES (?, ?, ?, ?)').run(
-    id, date, now, '[]'
-  );
+  const db = await getDb();
+  await db.execute({
+    sql: 'INSERT INTO sessions (id, date, clock_in, breaks) VALUES (?, ?, ?, ?)',
+    args: [id, date, now, '[]'],
+  });
   return { id, date, clockIn: now, breaks: [] };
 }
 
-export function clockOut(): Session {
-  const { status, activeSession } = getState();
+export async function clockOut(): Promise<Session> {
+  const { status, activeSession } = await getState();
   if (!activeSession || status === 'IDLE') throw new Error('Not clocked in');
 
   let { breaks } = activeSession;
+  const db = await getDb();
   if (status === 'ON_BREAK') {
     breaks = breaks.map((b, i) =>
       i === breaks.length - 1 ? { ...b, end: Date.now() } : b
     );
-    db.prepare('UPDATE sessions SET breaks = ? WHERE id = ?').run(
-      JSON.stringify(breaks), activeSession.id
-    );
+    await db.execute({
+      sql: 'UPDATE sessions SET breaks = ? WHERE id = ?',
+      args: [JSON.stringify(breaks), activeSession.id],
+    });
   }
 
   const now = Date.now();
-  db.prepare('UPDATE sessions SET clock_out = ? WHERE id = ?').run(now, activeSession.id);
+  await db.execute({
+    sql: 'UPDATE sessions SET clock_out = ? WHERE id = ?',
+    args: [now, activeSession.id],
+  });
   return { ...activeSession, breaks, clockOut: now };
 }
 
-export function startBreak(): Session {
-  const { status, activeSession } = getState();
+export async function startBreak(): Promise<Session> {
+  const { status, activeSession } = await getState();
   if (!activeSession || status !== 'WORKING') throw new Error('Not working');
 
   const breaks: Break[] = [...activeSession.breaks, { start: Date.now() }];
-  db.prepare('UPDATE sessions SET breaks = ? WHERE id = ?').run(
-    JSON.stringify(breaks), activeSession.id
-  );
+  const db = await getDb();
+  await db.execute({
+    sql: 'UPDATE sessions SET breaks = ? WHERE id = ?',
+    args: [JSON.stringify(breaks), activeSession.id],
+  });
   return { ...activeSession, breaks };
 }
 
-export function endBreak(): Session {
-  const { status, activeSession } = getState();
+export async function endBreak(): Promise<Session> {
+  const { status, activeSession } = await getState();
   if (!activeSession || status !== 'ON_BREAK') throw new Error('Not on break');
 
   const breaks = activeSession.breaks.map((b, i) =>
     i === activeSession.breaks.length - 1 ? { ...b, end: Date.now() } : b
   );
-  db.prepare('UPDATE sessions SET breaks = ? WHERE id = ?').run(
-    JSON.stringify(breaks), activeSession.id
-  );
+  const db = await getDb();
+  await db.execute({
+    sql: 'UPDATE sessions SET breaks = ? WHERE id = ?',
+    args: [JSON.stringify(breaks), activeSession.id],
+  });
   return { ...activeSession, breaks };
 }
 
-export function getTodaySessions(): Session[] {
-  const rows = db
-    .prepare('SELECT * FROM sessions WHERE date = ? ORDER BY clock_in')
-    .all(todayStr()) as Record<string, unknown>[];
-  return rows.map(parseRow);
+export async function getTodaySessions(): Promise<Session[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: 'SELECT * FROM sessions WHERE date = ? ORDER BY clock_in',
+    args: [todayStr()],
+  });
+  return result.rows.map(r => parseRow(r as Row));
 }
 
-export function getWeekSessions(weekStart: string): Session[] {
+export async function getWeekSessions(weekStart: string): Promise<Session[]> {
   const start = new Date(weekStart + 'T00:00:00');
   const end = new Date(start);
   end.setDate(end.getDate() + 7);
   const endStr = end.toISOString().split('T')[0];
 
-  const rows = db
-    .prepare('SELECT * FROM sessions WHERE date >= ? AND date < ? ORDER BY clock_in')
-    .all(weekStart, endStr) as Record<string, unknown>[];
-  return rows.map(parseRow);
+  const db = await getDb();
+  const result = await db.execute({
+    sql: 'SELECT * FROM sessions WHERE date >= ? AND date < ? ORDER BY clock_in',
+    args: [weekStart, endStr],
+  });
+  return result.rows.map(r => parseRow(r as Row));
 }
 
-export function getAllWeekStarts(): string[] {
-  const rows = db
-    .prepare('SELECT DISTINCT date FROM sessions ORDER BY date DESC')
-    .all() as { date: string }[];
+export async function getAllWeekStarts(): Promise<string[]> {
+  const db = await getDb();
+  const result = await db.execute(
+    'SELECT DISTINCT date FROM sessions ORDER BY date DESC'
+  );
 
   const weeks = new Set<string>();
-  for (const { date } of rows) {
+  for (const row of result.rows) {
+    const date = row.date as string;
     const d = new Date(date + 'T00:00:00');
     const day = d.getDay();
     const diff = day === 0 ? -6 : 1 - day;

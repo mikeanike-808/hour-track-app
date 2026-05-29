@@ -1,23 +1,21 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import { createClient } from '@libsql/client';
 
-const g = global as typeof global & { _db?: Database.Database };
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
 
-if (!g._db) {
-  const dataDir = path.join(process.cwd(), 'data');
-  fs.mkdirSync(dataDir, { recursive: true });
+const ready = client.execute(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    clock_in INTEGER NOT NULL,
+    clock_out INTEGER,
+    breaks TEXT NOT NULL DEFAULT '[]'
+  )
+`);
 
-  g._db = new Database(path.join(dataDir, 'hours.db'));
-  g._db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      date TEXT NOT NULL,
-      clock_in INTEGER NOT NULL,
-      clock_out INTEGER,
-      breaks TEXT NOT NULL DEFAULT '[]'
-    )
-  `);
+export async function getDb() {
+  await ready;
+  return client;
 }
-
-export default g._db!;

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getAllWeekStarts, getWeekSessions } from '@/lib/sessions';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const weekStarts = await getAllWeekStarts();

@@ -1,21 +1,33 @@
 import { createClient } from '@libsql/client';
 
-const client = createClient({
-  url: process.env.TURSO_DATABASE_URL!,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+let client: ReturnType<typeof createClient> | null = null;
+let initialized = false;
 
-const ready = client.execute(`
-  CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    date TEXT NOT NULL,
-    clock_in INTEGER NOT NULL,
-    clock_out INTEGER,
-    breaks TEXT NOT NULL DEFAULT '[]'
-  )
-`);
+function getClient() {
+  if (!client) {
+    const url = process.env.TURSO_DATABASE_URL;
+    if (!url) throw new Error('TURSO_DATABASE_URL environment variable is not set');
+    client = createClient({
+      url,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+  }
+  return client;
+}
 
 export async function getDb() {
-  await ready;
-  return client;
+  const db = getClient();
+  if (!initialized) {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        clock_in INTEGER NOT NULL,
+        clock_out INTEGER,
+        breaks TEXT NOT NULL DEFAULT '[]'
+      )
+    `);
+    initialized = true;
+  }
+  return db;
 }
